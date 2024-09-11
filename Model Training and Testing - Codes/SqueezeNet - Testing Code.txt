@@ -1,0 +1,261 @@
+# Save the trained model
+torch.save(model.state_dict(), '/home/ec/Downloads/squeezenet1_1_plant_disease.pth')
+
+# Define transforms for the test dataset
+test_transform = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+])
+
+# Load the test dataset
+testset = torchvision.datasets.ImageFolder(root='/home/ec/Downloads/New Plant Diseases Dataset(Augmented)/valid/', transform=test_transform)
+testloader = torch.utils.data.DataLoader(testset, batch_size=32, shuffle=False)
+
+# Load the trained model weights
+model.load_state_dict(torch.load('/home/ec/Downloads/squeezenet1_1_plant_disease.pth'))
+model.to(device)
+model.eval()  # Set the model to evaluation mode
+
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, classification_report
+
+correct = 0
+total = 0
+predicted_labels = []
+true_labels = []
+
+with torch.no_grad():  # No need to track gradients for validation
+    for data in testloader:
+        images, labels = data
+        images, labels = images.to(device), labels.to(device)
+        
+        outputs = model(images)
+        _, predicted = torch.max(outputs, 1)
+        
+        # Append predicted and true labels to lists
+        predicted_labels.extend(predicted.cpu().numpy())
+        true_labels.extend(labels.cpu().numpy())
+        
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
+
+# Calculate accuracy
+accuracy = 100 * correct / total
+print('Accuracy of the network on the test images: %d %%' % accuracy)
+
+# Compute confusion matrix
+conf_matrix = confusion_matrix(true_labels, predicted_labels)
+print('Confusion Matrix:')
+print(conf_matrix)
+
+# Plot confusion matrix with values
+plt.figure(figsize=(8, 6))
+plt.imshow(conf_matrix, interpolation='nearest', cmap=plt.cm.Blues)
+plt.title('Confusion Matrix')
+plt.colorbar()
+tick_marks = np.arange(len(trainset.classes))
+plt.xticks(tick_marks, trainset.classes, rotation=45)
+plt.yticks(tick_marks, trainset.classes)
+
+# Print values on the matrix
+thresh = conf_matrix.max() / 2.
+for i, j in np.ndindex(conf_matrix.shape):
+    plt.text(j, i, format(conf_matrix[i, j], 'd'),
+             ha='center', va='center',
+             color='white' if conf_matrix[i, j] > thresh else 'black')
+
+plt.xlabel('Predicted Label')
+plt.ylabel('True Label')
+plt.tight_layout()
+plt.show()
+
+# Calculate precision, recall, f1-score, support
+report = classification_report(true_labels, predicted_labels, target_names=trainset.classes)
+print('Classification Report:')
+print(report)
+
+# Plot training losses
+plt.figure(figsize=(10, 6))
+plt.plot(range(1, num_epochs + 1), train_losses, label='Training Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.title('Training Loss')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+
+# Function to predict the disease from a given image path
+def predict_image(image_path, model, transform, classes):
+    model.eval()  # Set the model to evaluation mode
+    image = Image.open(image_path)
+    image = transform(image).unsqueeze(0)  # Transform and add batch dimension
+    image = image.to(device)
+    
+    with torch.no_grad():
+        outputs = model(image)
+        _, predicted = torch.max(outputs, 1)
+    
+    return classes[predicted.item()]
+
+# Example usage:
+# Replace 'your_image_path.jpg' with the actual image path
+image_path='/home/ec/Downloads/testing_imges/image.JPG'
+predicted_class = predict_image(image_path, model, transform, trainset.classes)
+print(f'The disease in the image is: {predicted_class}')
+
+import os
+from PIL import Image
+
+# Function to predict the disease from a list of image paths
+def predict_images(image_paths, model, transform, classes):
+    model.eval()  # Set the model to evaluation mode
+    predictions = []
+    
+    for image_path in image_paths:
+        if os.path.exists(image_path):
+            image = Image.open(image_path)  # Open the image file
+            image = transform(image).unsqueeze(0)  # Transform and add batch dimension
+            image = image.to(device)
+            
+            with torch.no_grad():
+                outputs = model(image)
+                _, predicted = torch.max(outputs, 1)
+            
+            predicted_class = classes[predicted.item()]
+            predictions.append((image_path, predicted_class))
+        else:
+            print(f'File does not exist: {image_path}')
+            predictions.append((image_path, 'File not found'))
+    
+    return predictions
+
+# Example usage:
+# Replace these with actual image paths
+image_paths = [
+    '/home/ec/Downloads/testing_imges/Leaf_mold.JPG',
+    '/home/ec/Downloads/testing_imges/Leaf_mold2.JPG',
+    '/home/ec/Downloads/testing_imges/Mosaic_virus.JPG',
+     '/home/ec/Downloads/testing_imges/Septoria_leaf_spot.JPG',
+     '/home/ec/Downloads/testing_imges/Septoria_leaf_spot2.JPG',
+     '/home/ec/Downloads/testing_imges/Target_spot1.JPG',
+     '/home/ec/Downloads/testing_imges/Target_spot2.JPG',
+     '/home/ec/Downloads/testing_imges/Tomato_Bacterial_spot1.JPG',
+     '/home/ec/Downloads/testing_imges/Tomato_Bacterial_spot2.JPG',
+     '/home/ec/Downloads/testing_imges/Tomato_Bacterial_spot3.JPG',
+    '/home/ec/Downloads/testing_imges/Tomato_Early_blight1.JPG',
+     '/home/ec/Downloads/testing_imges/Tomato_Early_blight2.JPG',
+     '/home/ec/Downloads/testing_imges/Yellow_leaf_curl_virus.JPG',
+     '/home/ec/Downloads/testing_imges/Yellow_leaf_curl_virus2.JPG',
+     '/home/ec/Downloads/testing_imges/healthy1.JPG',
+    '/home/ec/Downloads/testing_imges/healthy2.JPG',
+    # Add more image paths as needed
+]
+
+# Predict diseases for the images
+predictions = predict_images(image_paths, model, transform, trainset.classes)
+
+# Print the predictions
+for path, prediction in predictions:
+    print(f'The disease in the image {path} is: {prediction}')
+
+# Function to predict the disease from a list of image paths and print additional outputs
+def predict_images(image_paths, model, transform, classes, top_k=5):
+    model.eval()  # Set the model to evaluation mode
+    predictions = []
+    all_true_labels = []
+    all_predicted_labels = []
+    all_probabilities = []
+
+    for image_path in image_paths:
+        if os.path.exists(image_path):
+            image = Image.open(image_path)  # Open the image file
+            image = transform(image).unsqueeze(0)  # Transform and add batch dimension
+            image = image.to(device)
+
+            with torch.no_grad():
+                outputs = model(image)
+                probabilities = F.softmax(outputs, dim=1)
+                top_probs, top_classes = probabilities.topk(top_k, dim=1)
+                top_probs = top_probs.cpu().numpy().flatten()
+                top_classes = top_classes.cpu().numpy().flatten()
+
+                _, predicted = torch.max(outputs, 1)
+                predicted_class = classes[predicted.item()]
+                predicted_probability = probabilities[0][predicted.item()].item()
+                
+                predictions.append((image_path, predicted_class, predicted_probability, top_classes, top_probs))
+                all_predicted_labels.append(predicted.item())
+                all_probabilities.append(probabilities.cpu().numpy())
+        else:
+            print(f'File does not exist: {image_path}')
+            predictions.append((image_path, 'File not found', 0, [], []))
+
+    return predictions, all_predicted_labels, all_probabilities
+
+# Example usage:
+# Replace these with actual image paths
+image_paths = [
+    '/home/ec/Downloads/testing_images/image1.jpg',
+    '/home/ec/Downloads/testing_images/image2.jpg',
+    '/home/ec/Downloads/testing_images/image3.jpg',
+    # Add more image paths as needed
+]
+
+# Predict diseases for the images
+predictions, all_predicted_labels, all_probabilities = predict_images(image_paths, model, transform, trainset.classes, top_k=5)
+
+# Print the predictions with image labels and probabilities
+for path, prediction, probability, top_classes, top_probs in predictions:
+    print(f'The disease in the image {path} is: {prediction} with probability {probability:.4f}')
+    for cls, prob in zip(top_classes, top_probs):
+        print(f'  Top class: {trainset.classes[cls]} with probability {prob:.4f}')
+
+# Print model summary
+print(model)
+
+#################################################################################################(NOT EXECUTED)
+
+# ROC Curve and AUC Score
+# Binarize labels for ROC curve calculation
+true_labels_bin = label_binarize(true_labels, classes=np.arange(num_classes))
+
+# Compute ROC curve and ROC area for each class
+fpr = dict()
+tpr = dict()
+roc_auc = dict()
+outputs_np = np.concatenate(all_probabilities, axis=0)
+for i in range(num_classes):
+    fpr[i], tpr[i], _ = roc_curve(true_labels_bin[:, i], outputs_np[:, i])
+    roc_auc[i] = auc(fpr[i], tpr[i])
+
+# Compute micro-average ROC curve and ROC area
+fpr_micro, tpr_micro, _ = roc_curve(true_labels_bin.ravel(), outputs_np.ravel())
+roc_auc_micro = auc(fpr_micro, tpr_micro)
+
+# Plot ROC curve
+plt.figure(figsize=(8, 6))
+colors = cycle(['aqua', 'darkorange', 'cornflowerblue', 'green', 'red', 'purple', 'brown', 'pink', 'gray', 'olive'])
+for i, color in zip(range(num_classes), colors):
+    plt.plot(fpr[i], tpr[i], color=color, lw=2,
+             label='ROC curve (area = %0.2f) for class %s' % (roc_auc[i], trainset.classes[i]))
+
+plt.plot([0, 1], [0, 1], 'k--', lw=2)
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('ROC Curve')
+plt.legend(loc="lower right")
+plt.show()
+
+# Print AUC score
+print('AUC Score:')
+for i in range(num_classes):
+    print(f'Class {trainset.classes[i]}: {roc_auc[i]:.2f}')
+print(f'Micro-average: {roc_auc_micro:.2f}')
+
+model.save('trained_model.h5')

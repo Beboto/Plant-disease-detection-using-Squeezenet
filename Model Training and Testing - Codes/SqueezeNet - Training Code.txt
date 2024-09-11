@@ -1,0 +1,108 @@
+import torch
+import torchvision
+import torchvision.transforms as transforms
+import torch.optim as optim
+import torch.nn as nn
+from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import label_binarize
+from itertools import cycle
+from PIL import Image
+
+# Check if GPU is available
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Define transforms for the dataset
+transform = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+])
+
+# Load the training dataset
+trainset = torchvision.datasets.ImageFolder(root='/home/ec/Downloads/New Plant Diseases Dataset(Augmented)/train/', transform=transform)
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=32, shuffle=True)
+
+# Define the SqueezeNet model
+model = torchvision.models.squeezenet1_1(pretrained=False)
+num_classes = len(trainset.classes)
+model.classifier[1] = nn.Conv2d(512, num_classes, kernel_size=(1,1), stride=(1,1))
+model.num_classes = 10
+
+# Move the model to the appropriate device
+model.to(device)
+
+# Define the loss function and optimizer
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+import matplotlib.pyplot as plt
+
+num_epochs = 30
+train_losses = []
+train_accuracies = []
+
+for epoch in range(num_epochs):
+    model.train()  # Set the model to training mode
+    running_loss = 0.0
+    correct = 0
+    total = 0
+    for i, data in enumerate(trainloader, 0):
+        inputs, labels = data
+        inputs, labels = inputs.to(device), labels.to(device)
+
+        optimizer.zero_grad()
+
+        # Forward pass
+        outputs = model(inputs)
+        loss = criterion(outputs, labels)
+
+        # Backward pass and optimize
+        loss.backward()
+        optimizer.step()
+
+        # Calculate accuracy
+        _, predicted = torch.max(outputs, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
+
+        # Print statistics
+        running_loss += loss.item()
+        if i % 100 == 99:    # Print every 100 mini-batches
+            print('[Epoch %d, Batch %5d] loss: %.3f, accuracy: %.2f%%' %
+                  (epoch + 1, i + 1, running_loss / 100, 100 * correct / total))
+            running_loss = 0.0
+
+    # Calculate average epoch training loss and accuracy
+    epoch_loss = running_loss / len(trainloader)
+    epoch_accuracy = 100 * correct / total
+    train_losses.append(epoch_loss)
+    train_accuracies.append(epoch_accuracy)
+
+    print('Finished Epoch %d' % (epoch + 1))
+
+print('Finished Training')
+
+# Plotting the training loss and accuracy graphs
+epochs = range(1, num_epochs + 1)
+
+plt.figure(figsize=(12, 5))
+
+plt.subplot(1, 2, 1)
+plt.plot(epochs, train_losses, 'r', label='Training loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.title('Training Loss')
+plt.legend()
+
+plt.subplot(1, 2, 2)
+plt.plot(epochs, train_accuracies, 'b', label='Training accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy (%)')
+plt.title('Training Accuracy')
+plt.legend()
+
+plt.show()
+
